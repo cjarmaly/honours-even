@@ -1,0 +1,4 @@
+(executable
+ (public_name bidwhist)
+ (name main)
+ (libraries bidwhist))

@@ -1,0 +1,7 @@
+# dune init project bidwhist
+# OCAMLPARAM: unset
+# Shared cache: enabled-except-user-rules
+# Shared cache location: /Users/christianarmaly/.cache/dune/db
+# Workspace root:
+# /Users/christianarmaly/Documents/Projects/honours-even/bidwhist
+# Auto-detected concurrency: 14
