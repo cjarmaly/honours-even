@@ -38,7 +38,7 @@ let deal (rng: Random.State.t) (deck: t list) : dealt =
     let h3, rest = split_at 12 rest in
     let kitty, h4 = split_at 6 rest in (* reverse order to avoid unnecessary iterations *)
     
-    { hands = (h1, h2, h3, h4); kitty = kitty }
+    { hands = (h1, h2, h3, h4); kitty }
 
 
 
