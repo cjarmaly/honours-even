@@ -1,3 +1,11 @@
 (test
- (name test_bidwhist)
+ (name test_deck)
+ (libraries bidwhist alcotest qcheck-alcotest))
+
+(test
+ (name test_bid)
+ (libraries bidwhist alcotest qcheck-alcotest))
+
+ (test
+ (name test_player)
  (libraries bidwhist alcotest qcheck-alcotest))
