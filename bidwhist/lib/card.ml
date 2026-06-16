@@ -2,7 +2,7 @@ type suit = Hearts | Diamonds | Clubs | Spades
 
 type rank = Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King | Ace
 
-type card =
+type t =
   | Regular of { suit: suit; rank: rank }
   | BigJoker
   | LittleJoker
@@ -42,7 +42,7 @@ type strength =
   | TrumpLittle (* little joker *)
   | TrumpBig (* big joker *)
 
-let strength_of_card (regime: regime) (led: suit) (card: card) : strength =
+let strength_of_card (regime: regime) (led: suit) (card: t) : strength =
   match regime with 
   | Uptown trump | Downtown trump -> (
     match card with 
@@ -61,7 +61,7 @@ let strength_of_card (regime: regime) (led: suit) (card: card) : strength =
     | BigJoker | LittleJoker -> Dead
   )
 
-let compare_strength (strength1: strength) (strength2: strength) : int =
+let compare_strength (s1: strength) (s2: strength) : int =
   let tier = function
   | Dead -> 0
   | Led _ -> 1
@@ -69,13 +69,13 @@ let compare_strength (strength1: strength) (strength2: strength) : int =
   | TrumpLittle -> 3
   | TrumpBig -> 4
   in
-  match strength1, strength2 with
+  match s1, s2 with
   | Led a, Led b 
   | Trump a, Trump b -> Int.compare a b
-  | _, _ -> Int.compare (tier strength1) (tier strength2)
+  | _, _ -> Int.compare (tier s1) (tier s2)
   
-let compare_in_trick (regime: regime) (led: suit) (card1: card) (card2: card) : int =
-  compare_strength (strength_of_card regime led card1) (strength_of_card regime led card2)
+let compare_in_trick (regime: regime) (led: suit) (c1: t) (c2: t) : int =
+  compare_strength (strength_of_card regime led c1) (strength_of_card regime led c2)
 
 
 
