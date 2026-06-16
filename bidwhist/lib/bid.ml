@@ -2,14 +2,14 @@ type bid_kind = Uptown | Downtown | NoTrump
 
 type level = Three | Four | Five | Six | Seven
 
-type bid = {
+type t = {
   kind: bid_kind;
   level: level;
 }
 
-type action = Pass | Bid of bid
+type action = Pass | Bid of t
 
-let compare_bid (b1: bid) (b2: bid) : int =
+let compare_bid (b1: t) (b2: t) : int =
   let tier = function
   | Uptown -> 0
   | Downtown -> 1
