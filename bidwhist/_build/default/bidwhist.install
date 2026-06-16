@@ -1,0 +1,8 @@
+lib: [
+  "_build/install/default/lib/bidwhist/META"
+  "_build/install/default/lib/bidwhist/dune-package"
+  "_build/install/default/lib/bidwhist/opam"
+]
+bin: [
+  "_build/install/default/bin/bidwhist"
+]
