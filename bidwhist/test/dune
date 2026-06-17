@@ -13,3 +13,7 @@
  (test
  (name test_trick)
  (libraries bidwhist alcotest qcheck-alcotest))
+
+ (test
+ (name test_game)
+ (libraries bidwhist alcotest qcheck-alcotest))
