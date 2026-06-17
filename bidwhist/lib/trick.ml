@@ -66,4 +66,8 @@ let winner (regime : Card.regime) (t : t) : Player.seat =
             first rest
         in
         best_seat
-        
+
+let current_player (t: t) : Player.seat =
+  match List.rev t.plays with
+  | [] -> t.leader
+  | (last_seat, _) :: _ -> Player.next_seat last_seat

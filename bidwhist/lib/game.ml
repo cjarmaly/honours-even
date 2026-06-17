@@ -127,15 +127,14 @@ let declare (t : t) (d : declaration) (discards : Card.t list): t =
       { t with phase = Playing { regime; hands; tally; trick; bid; declarer = winner } } 
     | _ -> failwith "declare: not a declaring phase"
 
+
+
+
 let play_step (t : t) (card : Card.t): t =
   match t.phase with
     | Playing { regime; hands; tally; trick; bid; declarer } ->
       (* The player to act is the last player to play a card, or the leader if no cards have been played *)
-      let player =
-        match List.rev trick.plays with
-        | [] -> trick.leader
-        | (last_seat, _) :: _ -> Player.next_seat last_seat
-      in
+      let player = Trick.current_player trick in
       (* The card must be a legal move *)
       if not (List.mem card (Trick.legal_moves regime (get_hand player hands) trick))
         then failwith "play_step: illegal card";

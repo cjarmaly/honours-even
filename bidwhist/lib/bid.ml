@@ -17,7 +17,7 @@ let level_to_int (l: level) : int =
   | Five -> 5
   | Six -> 6
   | Seven -> 7
-  
+
 let compare_bid (b1: t) (b2: t) : int =
   let tier = function
   | Uptown -> 0
@@ -27,3 +27,8 @@ let compare_bid (b1: t) (b2: t) : int =
   let lvl = Int.compare (level_to_int b1.level) (level_to_int b2.level) in
   if lvl <> 0 then lvl
   else Int.compare (tier b1.kind) (tier b2.kind)
+
+let all_bids = 
+  List.concat_map
+     (fun l -> List.map (fun k -> { level = l; kind = k}) [Uptown; Downtown; NoTrump]) 
+     [Three; Four; Five; Six; Seven]
