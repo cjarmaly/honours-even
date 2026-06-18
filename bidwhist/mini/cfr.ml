@@ -86,7 +86,7 @@ let all_deals =
 
 let average_strategy (node : node) : float array =
   let tot = Array.fold_left ( +. ) 0. node.strategy_sum in
-  let n   = Array.length node.strategy_sum in
+  let n = Array.length node.strategy_sum in
   if tot > 0. then Array.map (fun s -> s /. tot) node.strategy_sum
   else Array.make n (1. /. float_of_int n)
 
@@ -99,3 +99,86 @@ let train (iters : int) : float array =
       all_deals
   done;
   Array.map (fun x -> x /. float_of_int (iters * List.length all_deals)) total
+
+
+(* Best Response & Exploitability Oracle which certifies that the trained strategy is a Nash equilibrium *)
+
+(* the trained strategy at a state *)
+let sigma (s : Game.state) : float array =
+  average_strategy (get_node (key s) (Game.legal_moves s))
+
+(* value to player i when EVERYONE plays sigma (the equilibrium value) *)
+let rec ev_sigma (i : int) (s : Game.state) : float =
+  if Game.is_terminal s then Game.payoff s i
+  else
+    let strat = sigma s and acts = Game.legal_moves s in
+    let t = ref 0. in
+    List.iteri (fun idx a -> t := !t +. strat.(idx) *. ev_sigma i (Game.apply s a)) acts;
+    !t
+
+let value_under_sigma (i : int) : float =
+  List.fold_left (fun acc h -> acc +. ev_sigma i (Game.initial h)) 0. all_deals
+  /. float_of_int (List.length all_deals)
+
+(* player i's chosen best-response action per info set, filled by best_response *)
+let br_action : (string, Game.action) Hashtbl.t = Hashtbl.create 256
+
+(* value to i when i plays br_action and everyone else plays sigma *)
+let rec brv (i : int) (s : Game.state) : float =
+  if Game.is_terminal s then Game.payoff s i
+  else
+    let acts = Game.legal_moves s in
+    if s.Game.to_act = i then
+      brv i (Game.apply s (Hashtbl.find br_action (key s)))   (* must already be decided *)
+    else
+      let strat = sigma s in
+      let t = ref 0. in
+      List.iteri (fun idx a -> t := !t +. strat.(idx) *. brv i (Game.apply s a)) acts;
+      !t
+
+(* gather, for each of i's info sets, the states reaching it with their counterfactual reach
+(product of the OTHER players' sigma-probs; i's own choices excluded) *)
+let collect (i : int) : (string, (Game.state * float) list) Hashtbl.t =
+  let tbl = Hashtbl.create 256 in
+  let rec go s reach =
+    if Game.is_terminal s then ()
+    else
+      let acts = Game.legal_moves s in
+      if s.Game.to_act = i then begin
+        let k = key s in
+        Hashtbl.replace tbl k ((s, reach) :: (try Hashtbl.find tbl k with Not_found -> []));
+        List.iter (fun a -> go (Game.apply s a) reach) acts          (* i's prob excluded *)
+      end else begin
+        let strat = sigma s in
+        List.iteri (fun idx a -> go (Game.apply s a) (reach *. strat.(idx))) acts
+      end
+  in
+  List.iter (fun h -> go (Game.initial h) 1.0) all_deals;
+  tbl
+
+(* exact best-response value for player i *)
+let best_response (i : int) : float =
+  Hashtbl.clear br_action;
+  let reaching = collect i in
+  let layer_of k =
+    match Hashtbl.find reaching k with (s, _) :: _ -> List.length s.Game.log | [] -> 0 in
+  (* decide info sets deepest-first, so deeper i-choices are fixed before shallower ones *)
+  let keys = Hashtbl.fold (fun k _ acc -> k :: acc) reaching [] in
+  let keys = List.sort (fun a b -> compare (layer_of b) (layer_of a)) keys in
+  List.iter (fun k ->
+    let states = Hashtbl.find reaching k in
+    let acts = Game.legal_moves (fst (List.hd states)) in
+    let best_a = ref (List.hd acts) and best_v = ref neg_infinity in
+    List.iter (fun a ->
+      let v = List.fold_left (fun acc (s, r) -> acc +. r *. brv i (Game.apply s a)) 0. states in
+      if v > !best_v then (best_v := v; best_a := a)
+    ) acts;
+    Hashtbl.replace br_action k !best_a
+  ) keys;
+  List.fold_left (fun acc h -> acc +. brv i (Game.initial h)) 0. all_deals
+  /. float_of_int (List.length all_deals)
+
+(* total exploitability: how much each player gains by deviating, summed *)
+let exploitability () : float =
+  List.fold_left (fun acc i -> acc +. (best_response i -. value_under_sigma i)) 0.
+    [ 0; 1; 2; 3 ]
