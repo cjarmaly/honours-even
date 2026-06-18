@@ -21,3 +21,7 @@
  (test
  (name test_sim)
  (libraries bidwhist alcotest qcheck-alcotest))
+
+ (test
+ (name test_kuhn)
+ (libraries kuhn alcotest qcheck-alcotest))
