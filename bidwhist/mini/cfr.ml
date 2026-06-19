@@ -17,12 +17,31 @@ let action_str = function
   | Game.Declare s -> "d" ^ suit_str s
   | Game.Play c -> card_str c
 
-(* an information set = the acting player's hand + the public log *)
-let key (s : Game.state) : string =
-  let hand = List.sort compare s.Game.hands.(s.Game.to_act) in
-  let hand_str = String.concat "" (List.map card_str hand) in
+(* Bucket used for abstracting the game into a smaller state space*)
+let bucket (hand : Game.card list) : string = 
+  hand |> List.map (fun c -> c.Game.rank) 
+  |> List.sort compare |> List.map rank_str |> String.concat ""
+
+(* exact info-set key: full hand + public log *)
+let key_exact (s : Game.state) : string =
+  let hand_str =
+    String.concat "" (List.map card_str (List.sort compare s.Game.hands.(s.Game.to_act))) in
   let log_str = String.concat "" (List.map action_str s.Game.log) in
   string_of_int s.Game.to_act ^ ":" ^ hand_str ^ "|" ^ log_str
+
+(* abstracted key: buckets the declarer's hand by rank (lossy), exact during play *)
+let key_abstract (s : Game.state) : string =
+  let hand_str =
+    match s.Game.trump with
+    | None   -> bucket s.Game.hands.(s.Game.to_act)
+    | Some _ -> String.concat "" (List.map card_str (List.sort compare s.Game.hands.(s.Game.to_act)))
+  in
+  let log_str = String.concat "" (List.map action_str s.Game.log) in
+  string_of_int s.Game.to_act ^ ":" ^ hand_str ^ "|" ^ log_str
+
+(* training and sigma use this; exact by default, swap to key_abstract for the demo *)
+let key_ref = ref key_exact
+let key (s : Game.state) : string = !key_ref s
 
 let nodes : (string, node) Hashtbl.t = Hashtbl.create 1024
 let get_node (k : string) (acts : Game.action list) : node =
@@ -129,7 +148,7 @@ let rec brv (i : int) (s : Game.state) : float =
   else
     let acts = Game.legal_moves s in
     if s.Game.to_act = i then
-      brv i (Game.apply s (Hashtbl.find br_action (key s)))   (* must already be decided *)
+      brv i (Game.apply s (Hashtbl.find br_action (key_exact s)))   (* must already be decided *)
     else
       let strat = sigma s in
       let t = ref 0. in
@@ -145,7 +164,7 @@ let collect (i : int) : (string, (Game.state * float) list) Hashtbl.t =
     else
       let acts = Game.legal_moves s in
       if s.Game.to_act = i then begin
-        let k = key s in
+        let k = key_exact s in
         Hashtbl.replace tbl k ((s, reach) :: (try Hashtbl.find tbl k with Not_found -> []));
         List.iter (fun a -> go (Game.apply s a) reach) acts          (* i's prob excluded *)
       end else begin
@@ -182,3 +201,46 @@ let best_response (i : int) : float =
 let exploitability () : float =
   List.fold_left (fun acc i -> acc +. (best_response i -. value_under_sigma i)) 0.
     [ 0; 1; 2; 3 ]
+
+
+(* External sampling MCCFR *)
+
+(* sample an action index from a probability array *)
+let sample (rng : Random.State.t) (probs : float array) : int =
+  let r = ref (Random.State.float rng 1.0) and n = Array.length probs in
+  let rec go i =
+    if i >= n - 1 then i
+    else if !r < probs.(i) then i
+    else (r := !r -. probs.(i); go (i + 1))
+  in go 0
+
+let rec es_cfr (rng : Random.State.t) (i : int) (s : Game.state) : float =
+  if Game.is_terminal s then Game.payoff s i
+  else
+    let acts = Game.legal_moves s in
+    let node = get_node (key s) acts in
+    let strat = strategy node in
+    if s.Game.to_act = i then begin
+      (* traverser: enumerate every action, accumulate regret (no reach weight) *)
+      let util = Array.make (Array.length strat) 0. and node_util = ref 0. in
+      List.iteri (fun idx a ->
+        util.(idx) <- es_cfr rng i (Game.apply s a);
+        node_util := !node_util +. strat.(idx) *. util.(idx)) acts;
+      Array.iteri (fun idx _ ->
+        node.regret_sum.(idx) <- node.regret_sum.(idx) +. (util.(idx) -. !node_util))
+        node.actions;
+      !node_util
+    end else begin
+      (* other player: accumulate their average strategy, then sample ONE action *)
+      Array.iteri (fun idx _ ->
+        node.strategy_sum.(idx) <- node.strategy_sum.(idx) +. strat.(idx)) node.actions;
+      es_cfr rng i (Game.apply s node.actions.(sample rng strat))
+    end
+
+let deals_arr = Array.of_list all_deals
+
+let train_mc (rng : Random.State.t) (iters : int) : unit =
+  for _ = 1 to iters do
+    let hands = deals_arr.(Random.State.int rng (Array.length deals_arr)) in
+    for i = 0 to 3 do ignore (es_cfr rng i (Game.initial hands)) done
+  done

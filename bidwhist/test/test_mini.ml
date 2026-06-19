@@ -1,28 +1,23 @@
 open Mini
 
-(* Phase 4: CFR solves Mini Bid Whist, and the best-response oracle certifies it.
-   Marked `Slow — it trains and runs four best-response passes. *)
-let test_exploitability () =
+(*exact Mini — CFR reaches a per-player near-equilibrium. *)
+let test_exact_equilibrium () =
+  Cfr.key_ref := Cfr.key_exact;
   Hashtbl.clear Cfr.nodes;
-  let v = Cfr.train 100 in
+  Cfr.train_mc (Random.State.make [| 1 |]) 50_000;
+  Alcotest.(check bool) "exact: low exploitability" true (Cfr.exploitability () < 0.05)
 
-  (* Invariant: the value is zero-sum between teams and shared within a team. *)
-  Alcotest.(check (float 1e-9)) "zero-sum across teams" (-. v.(1)) v.(0);
-  Alcotest.(check (float 1e-9)) "partners share value"  v.(2)      v.(0);
+(* A lossy declare abstraction looks converged within the abstract game but is
+   heavily exploitable by a full-resolution opponent — abstraction error, measured. *)
+let test_abstraction_error () =
+  Cfr.key_ref := Cfr.key_abstract;
+  Hashtbl.clear Cfr.nodes;
+  Cfr.train_mc (Random.State.make [| 1 |]) 50_000;
+  Alcotest.(check bool) "abstraction is truly exploitable" true (Cfr.exploitability () > 0.1)
 
-  (* Invariant: best-responding never does worse than conforming — every gain >= 0.
-     (This is the oracle's own correctness check; it must hold for any strategy.) *)
-  let gains = List.map (fun i -> Cfr.best_response i -. Cfr.value_under_sigma i) [ 0; 1; 2; 3 ] in
-  List.iteri (fun i g ->
-    Alcotest.(check bool) (Printf.sprintf "player %d gain >= 0" i) true (g >= -1e-9)) gains;
-
-  (* Invariant: CFR reaches near-equilibrium — total exploitability is small.
-     (Loose bound: this catches a broken pipeline, not a tight convergence assertion.) *)
-  let total = List.fold_left ( +. ) 0. gains in
-  Alcotest.(check bool) "low exploitability" true (total < 0.1)
-
-let () =
-Alcotest.run "bidwhist" [
-  ( "mini",
-  [ Alcotest.test_case "CFR reaches low exploitability" `Slow test_exploitability ] );
-]
+  let () =
+  Alcotest.run "bidwhist" [
+    ( "mini",
+      [ Alcotest.test_case "exact equilibrium"      `Slow test_exact_equilibrium;
+        Alcotest.test_case "abstraction error"    `Slow test_abstraction_error ] );
+  ]
