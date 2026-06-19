@@ -2,3 +2,7 @@
  (public_name bidwhist)
  (name main)
  (libraries bidwhist))
+
+(executable
+ (name solve)
+ (libraries full))

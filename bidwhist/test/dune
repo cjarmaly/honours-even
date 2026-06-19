@@ -29,3 +29,7 @@
  (test
  (name test_mini)
  (libraries mini alcotest qcheck-alcotest))
+
+ (test
+ (name test_full)
+ (libraries full alcotest qcheck-alcotest))

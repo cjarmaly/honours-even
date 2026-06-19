@@ -35,6 +35,10 @@ let cards_str cs = cs |> List.sort compare |> List.map card_str |> String.concat
 let trick_str (t : Trick.t) = String.concat "" (List.map (fun (_, c) -> card_str c) t.Trick.plays)
 let tally_str (t : Eng.scores) = Printf.sprintf "%d.%d" t.Eng.north_south t.Eng.east_west
 
+let play_bucket regime led legal =
+  let cap n = min n 3 in
+  let n cat = cap (List.length (List.filter (fun c -> Game.cat_of regime led c = cat) legal)) in
+  Printf.sprintf "f%dt%do%d" (n `F) (n `T) (n `O)
 
 let key (s : Game.astate) : string =
   let p = Game.current_player s in
@@ -49,8 +53,11 @@ let key (s : Game.astate) : string =
       let remaining = List.filter (fun c -> not (List.mem c pd.Game.discarded)) pile in
       Printf.sprintf "%s|Dd|%s|%d" (seat_str p) (cards_str remaining) (List.length pd.Game.discarded)
   | Eng.Playing { regime; hands; tally; trick; _ }, _ ->
-      Printf.sprintf "%s|P|%s|%s|%s|%s" (seat_str p)
-        (cards_str (Eng.get_hand p hands)) (regime_str regime) (trick_str trick) (tally_str tally)
+      let legal = Trick.legal_moves regime (Eng.get_hand p hands) trick in
+      let led = Trick.led_suit trick in
+      let led_s = match led with Some s -> suit_str s | None -> "-" in
+      Printf.sprintf "%s|P|%s|%s|%s|%s" (seat_str p) (regime_str regime) led_s
+        (play_bucket regime led legal) (tally_str tally)
   | Eng.Finished _, _ -> "T"
 
 type node = { actions : Game.action array; regret_sum : float array; strategy_sum : float array }
@@ -107,18 +114,16 @@ let train_mc rng iters =
     List.iter (fun i -> ignore (es_cfr rng i s0)) all_seats
   done
 
-
-
 let epsilon = 0.6
 
 let rec os_cfr rng (i : Player.seat) (s : Game.astate) (pi : float) (po : float) (samp : float)
   : float * float =
   if Game.is_terminal s then (Game.payoff s i /. samp, 1.0)
   else
-    let acts  = Game.legal_actions s in
-    let node  = get_node (key s) acts in
+    let acts = Game.legal_actions s in
+    let node = get_node (key s) acts in
     let strat = strategy node in
-    let n     = Array.length strat in
+    let n = Array.length strat in
     let player = Game.current_player s in
     let sampling =
       if player = i
@@ -141,7 +146,52 @@ let rec os_cfr rng (i : Player.seat) (s : Game.astate) (pi : float) (po : float)
     else os_cfr rng i child pi (po *. strat.(a)) (samp *. sampling.(a))
 
 let train_os rng iters =
-  for _ = 1 to iters do
+  for iter = 1 to iters do
     let s0 = Game.initial rng in       (* the deal = the chance node, sampled once per iteration *)
-    List.iter (fun i -> ignore (os_cfr rng i s0 1.0 1.0 1.0)) all_seats
+    List.iter (fun i -> ignore (os_cfr rng i s0 1.0 1.0 1.0)) all_seats;
+    if iter mod 100000 = 0 then Printf.printf "iteration %d/%d\n%!" iter iters
   done
+
+
+let cfr_policy rng (s : Game.astate) : Game.action =
+  match Hashtbl.find_opt nodes (key s) with
+  | Some node -> node.actions.(sample rng (average_strategy node))   (* play the trained mix *)
+  | None ->                                                          (* unseen state: random *)
+      let acts = Game.legal_actions s in
+      List.nth acts (Random.State.int rng (List.length acts))
+
+let random_policy rng (s : Game.astate) : Game.action =
+  let acts = Game.legal_actions s in
+  List.nth acts (Random.State.int rng (List.length acts))
+
+(* play one hand: team North/South uses CFR, East/West plays random; return NS's point swing *)
+let play_hand rng : float =
+  let rec go s =
+    if Game.is_terminal s then Game.payoff s Player.North
+    else
+      let p = Game.current_player s in
+      let act = (if Player.team_of p = Player.NorthSouth then cfr_policy else random_policy) rng s in
+      go (Game.apply s act)
+  in
+  go (Game.initial rng)
+
+let evaluate rng n =
+  let total = ref 0. in
+  for _ = 1 to n do total := !total +. play_hand rng done;
+  !total /. float_of_int n
+
+
+let play_hand_with rng polA polB =     (* polA plays North/South, polB plays East/West *)
+let rec go s =
+  if Game.is_terminal s then Game.payoff s Player.North
+  else
+    let p = Game.current_player s in
+    let pol = if Player.team_of p = Player.NorthSouth then polA else polB in
+    go (Game.apply s (pol rng s))
+in
+go (Game.initial rng)
+
+let evaluate2 rng n polA polB =
+  let t = ref 0. in
+  for _ = 1 to n do t := !t +. play_hand_with rng polA polB done;
+  !t /. float_of_int n

@@ -40,7 +40,7 @@ let rec cfr (c0 : Game.card) (c1 : Game.card) (history : Game.action list) (p0 :
   let player = Game.current_player history in
   if Game.is_terminal history then begin
     let u = float_of_int (Game.payoff c0 c1 history) in (* payoff is from player 0's view *)
-    if player = 0 then u else -. u
+    if player = 0 then u else -. u 
   end
 else begin
   let my_card = if player =0 then c0 else c1 in
