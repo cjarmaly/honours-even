@@ -244,3 +244,45 @@ let train_mc (rng : Random.State.t) (iters : int) : unit =
     let hands = deals_arr.(Random.State.int rng (Array.length deals_arr)) in
     for i = 0 to 3 do ignore (es_cfr rng i (Game.initial hands)) done
   done
+
+
+let epsilon = 0.6
+
+(* returns (u, x): u = payoff_i / sample-prob ; x = player i's reach from this node to the leaf *)
+let rec os_cfr rng (i : int) (s : Game.state) (pi : float) (po : float) (samp : float) : float * float =
+if Game.is_terminal s then (Game.payoff s i /. samp, 1.0)
+else
+  let acts = Game.legal_moves s in
+  let node  = get_node (key s) acts in
+  let strat = strategy node in
+  let n = Array.length strat in
+  let player = s.Game.to_act in
+  let sampling =
+    if player = i
+    then Array.map (fun p -> epsilon /. float_of_int n +. (1. -. epsilon) *. p) strat
+    else strat
+  in
+  let a = sample rng sampling in
+  let child = Game.apply s node.actions.(a) in
+  if player = i then begin
+    (* average strategy: reach-weighted, importance-corrected *)
+    Array.iteri (fun b _ ->
+      node.strategy_sum.(b) <- node.strategy_sum.(b) +. (pi /. samp) *. strat.(b)) node.actions;
+    let (u, x) = os_cfr rng i child (pi *. strat.(a)) po (samp *. sampling.(a)) in
+    let w = u *. po in                       (* importance-weighted terminal value *)
+    let node_val = w *. x *. strat.(a) in    (* Σ_b σ(b)·cfv(b) = σ(a)·w·x *)
+    Array.iteri (fun b _ ->
+      let cfv = if b = a then w *. x else 0. in
+      node.regret_sum.(b) <- node.regret_sum.(b) +. (cfv -. node_val)) node.actions;
+    (u, x *. strat.(a))
+  end
+  else
+    os_cfr rng i child pi (po *. strat.(a)) (samp *. sampling.(a))
+
+let train_os rng iters =
+for _ = 1 to iters do
+  List.iter (fun i ->
+    let hands = deals_arr.(Random.State.int rng (Array.length deals_arr)) in
+    ignore (os_cfr rng i (Game.initial hands) 1.0 1.0 1.0))
+    [ 0; 1; 2; 3 ]
+done

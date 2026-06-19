@@ -128,8 +128,6 @@ let declare (t : t) (d : declaration) (discards : Card.t list): t =
     | _ -> failwith "declare: not a declaring phase"
 
 
-
-
 let play_step (t : t) (card : Card.t): t =
   match t.phase with
     | Playing { regime; hands; tally; trick; bid; declarer } ->
@@ -155,29 +153,33 @@ let play_step (t : t) (card : Card.t): t =
         { t with phase = Playing { regime; hands; tally; trick; bid; declarer } }
     | _ -> failwith "play_step: not a playing phase"
 
+
+
+let hand_delta ~(regime : Card.regime) ~(tally : scores) ~(bid : Bid.t)
+               ~(declarer : Player.seat) : int =
+  let declaring = Player.team_of declarer in
+  let declaring_tricks =
+    match declaring with
+    | Player.NorthSouth -> tally.north_south
+    | Player.EastWest   -> tally.east_west
+  in
+  let level = Bid.level_to_int bid.Bid.level in
+  let base =
+    if declaring_tricks = 13 then 13                      (* Boston *)
+    else if declaring_tricks >= 6 + level then declaring_tricks - 6   (* made *)
+    else - level                                          (* set *)
+  in
+  if regime = Card.NoTrumpHigh || regime = Card.NoTrumpDown then 2 * base else base
+
 let score_hand (rng: Random.State.t) (t : t) : t =
   match t.phase with
   | Playing { regime;  tally; bid; declarer; _ } ->
     let declaring_team = Player.team_of declarer in
-    let declaring_tricks = 
-      match declaring_team with
-      | NorthSouth -> tally.north_south
-      | EastWest -> tally.east_west
-    in
-    let level = Bid.level_to_int bid.Bid.level in
-    (* base delta, before No Trump adjustments *)
-    let base =
-      if declaring_tricks = 13 then 13 (* Bosotn rule *)
-      else if declaring_tricks >= 6 + level then declaring_tricks - 6 (* made bid *)
-      else - level (* set penalty *)
-    in
-    (* No Trump adjustments *)
-    let is_no_trump = (regime = Card.NoTrumpHigh || regime = Card.NoTrumpDown) in
-    let delta = if is_no_trump then 2 * base else base in
-    let scores = 
+    let delta = hand_delta ~regime ~tally ~bid ~declarer in
+    let scores =
       match declaring_team with
       | NorthSouth -> { t.scores with north_south = t.scores.north_south + delta }
-      | EastWest -> { t.scores with east_west = t.scores.east_west + delta }
+      | EastWest -> { t.scores with east_west   = t.scores.east_west   + delta }
     in
     let dealer = Player.next_seat t.dealer in
     (* check that only the declaring team's score changed*)
