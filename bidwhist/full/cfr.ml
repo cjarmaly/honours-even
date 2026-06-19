@@ -40,6 +40,15 @@ let play_bucket regime led legal =
   let n cat = cap (List.length (List.filter (fun c -> Game.cat_of regime led c = cat) legal)) in
   Printf.sprintf "f%dt%do%d" (n `F) (n `T) (n `O)
 
+let current_best regime trick =
+  match Trick.led_suit trick, trick.Trick.plays with
+  | Some led, first :: rest ->
+      Some (List.fold_left
+              (fun (bs, bc) (s, c) ->
+                 if Card.compare_in_trick regime led c bc > 0 then (s, c) else (bs, bc))
+              first rest)
+  | _ -> None
+
 let key (s : Game.astate) : string =
   let p = Game.current_player s in
   let g = s.game in
@@ -56,8 +65,14 @@ let key (s : Game.astate) : string =
       let legal = Trick.legal_moves regime (Eng.get_hand p hands) trick in
       let led = Trick.led_suit trick in
       let led_s = match led with Some s -> suit_str s | None -> "-" in
-      Printf.sprintf "%s|P|%s|%s|%s|%s" (seat_str p) (regime_str regime) led_s
-        (play_bucket regime led legal) (tally_str tally)
+      let best = current_best regime trick in
+      let partner_winning = match best with Some (bs, _) -> bs = Player.partner p | None -> false in
+      let can_beat = match best, led with
+        | Some (_, bc), Some l -> List.exists (fun c -> Card.compare_in_trick regime l c bc > 0) legal
+        | _ -> false
+      in
+      Printf.sprintf "%s|P|%s|%s|%s|%b%b|%s" (seat_str p) (regime_str regime) led_s
+        (play_bucket regime led legal) partner_winning can_beat (tally_str tally)
   | Eng.Finished _, _ -> "T"
 
 type node = { actions : Game.action array; regret_sum : float array; strategy_sum : float array }

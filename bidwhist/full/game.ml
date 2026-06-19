@@ -109,8 +109,17 @@ let legal_actions (s : astate) : action list =
   | Game.Finished _, _ -> []
 
 let auto_discard regime pile =
-  let sorted = List.sort (fun a b -> compare (weak_key regime a) (weak_key regime b)) pile in
-  List.filteri (fun i _ -> i < 6) sorted  (* the six weakest cards *)
+  let nt = List.filter (fun c -> not (is_trump regime c)) pile in
+  let suit_len su = List.length (List.filter (of_suit su) nt) in
+  let dkey c =
+    if is_trump regime c then (3, 0, 0)                 (* never discard a trump *)
+    else
+      let honor = if weak_key regime c >= 12 then 1 else 0 in   (* keep honors *)
+      let len = (match c with Card.Regular { suit; _ } -> suit_len suit | _ -> 9) in
+      (honor, len, weak_key regime c)                  (* else: short suit first, low rank first *)
+  in
+  List.sort (fun a b -> compare (dkey a) (dkey b)) pile
+  |> List.filteri (fun i _ -> i < 6)
 
 let apply (s : astate) (a : action) : astate =
   match s.game.Game.phase, s.pending, a with
