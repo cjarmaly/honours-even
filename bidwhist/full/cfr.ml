@@ -168,12 +168,14 @@ let train_os rng iters =
   done
 
 
-let cfr_policy rng (s : Game.astate) : Game.action =
+let cfr_policy rng s =
+  let legal = Game.legal_actions s in
+  let pick () = List.nth legal (Random.State.int rng (List.length legal)) in
   match Hashtbl.find_opt nodes (key s) with
-  | Some node -> node.actions.(sample rng (average_strategy node))   (* play the trained mix *)
-  | None ->                                                          (* unseen state: random *)
-      let acts = Game.legal_actions s in
-      List.nth acts (Random.State.int rng (List.length acts))
+  | Some node ->
+      let a = node.actions.(sample rng (average_strategy node)) in
+      if List.mem a legal then a else pick ()   (* guard: fall back if the trained action isn't legal here *)
+  | None -> pick ()
 
 let random_policy rng (s : Game.astate) : Game.action =
   let acts = Game.legal_actions s in
@@ -210,3 +212,42 @@ let evaluate2 rng n polA polB =
   let t = ref 0. in
   for _ = 1 to n do t := !t +. play_hand_with rng polA polB done;
   !t /. float_of_int n
+
+let play_one_hand rng dealer polA polB =
+  let s0 = { Game.game = Eng.start_hand rng dealer { Eng.north_south = 0; east_west = 0 };
+             pending = None } in
+  let rec go s =
+    if Game.is_terminal s then
+      match (s.Game.game).Eng.phase with
+      | Eng.Playing { regime; tally; bid; declarer; _ } ->
+          (Player.team_of declarer, Eng.hand_delta ~regime ~tally ~bid ~declarer)
+      | _ -> failwith "play_one_hand: not finished"
+    else
+      let p = Game.current_player s in
+      let pol = if Player.team_of p = Player.NorthSouth then polA else polB in
+      go (Game.apply s (pol rng s))
+  in
+  go s0
+
+let play_match rng cfr_is_ns =
+  let ns = ref 0 and ew = ref 0 and hands = ref 0 in
+  let pol_ns = if cfr_is_ns then cfr_policy else random_policy in
+  let pol_ew = if cfr_is_ns then random_policy else cfr_policy in
+  let winner () =
+    if !ns >= 7 || !ew <= -7 then `NS
+    else if !ew >= 7 || !ns <= -7 then `EW else `None in
+  while winner () = `None && !hands < 200 do
+    let team, delta = play_one_hand rng Player.North pol_ns pol_ew in   (* dealer fixed at North *)
+    (match team with Player.NorthSouth -> ns := !ns + delta | Player.EastWest -> ew := !ew + delta);
+    incr hands
+  done;
+  let cfr_team = if cfr_is_ns then `NS else `EW in
+  let won = match winner () with `None -> if !ns >= !ew then `NS else `EW | w -> w in
+  won = cfr_team
+
+let win_rate rng n =
+  let wins = ref 0 in
+  for k = 1 to n do
+    if play_match rng (k mod 2 = 0) then incr wins   (* alternate CFR team each match for fairness *)
+  done;
+  float_of_int !wins /. float_of_int n

@@ -8,6 +8,8 @@ let () =
                Full.Cfr.random_policy Full.Cfr.random_policy in
   let cfr  = Full.Cfr.evaluate2 (Random.State.make [| 7 |]) n
                Full.Cfr.cfr_policy    Full.Cfr.random_policy in
+  let wr = Full.Cfr.win_rate (Random.State.make [| 5 |]) 5000 in
+  Printf.printf "CFR match win rate vs random: %.1f%%\n%!" (wr *. 100.);
   Printf.printf "random vs random (NS swing): %.3f\n%!" base;
   Printf.printf "cfr    vs random (NS swing): %.3f\n%!" cfr;
   Printf.printf "CFR improvement over baseline: %.3f\n%!" (cfr -. base)
